@@ -1,17 +1,8 @@
 """
-bot.py  -  Moonlit Quest Bot v2
-====================================
+bot.py  -  Moonlit Quest Bot v2 (Public Version - No Role/Guild Restrictions, No Banners)
+=====================================================================================
 Moonlit Discord Quest Completer - v2
 A Discord bot that automatically completes Discord Quests using your user token.
-
-Features in v2:
-  - Redesigned embeds matching Moonlit aesthetic
-  - Real Queue System: Live FIFO queue tracking active & waiting users, positions, and pending quests
-  - Queue commands: $queue (check active solver, queue positions, and pending quests)
-  - 25 customizable emoji slots with live updates
-  - Interactive Quest Center ($help) with interactive dropdown menu
-  - Claim reward DM button with instant redemption code fetching
-  - Single instance lock to prevent duplicate messages
 """
 
 import asyncio
@@ -53,37 +44,24 @@ load_dotenv()
 # ─────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────
-GUILD_ID     = int(os.getenv("GUILD_ID",     "1543203570994778134"))
-FREE_ROLE_ID = int(os.getenv("FREE_ROLE_ID", "1549456578770501703"))
-BOOSTER_ROLE = int(os.getenv("BOOSTER_ROLE", "1549354891074605138"))
-PREMIUM_ROLE = int(os.getenv("PREMIUM_ROLE", "1549456584734806117"))
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
 PREFIX       = os.getenv("PREFIX", "$")
 
 # BRANDING
 BOT_NAME       = "Moonlit Quest v2"
 CREDITS        = "</> Quest Bot • Complete. Earn. Conquer."
-BANNER_ENABLED = False  # Banner completely disabled as requested
 
 # COLORS
-DARK_COLOR   = 0x2B2D31  # Discord dark embed color
-ACCENT_COLOR = 0x5865F2  # Blurple
-GREEN_COLOR  = 0x57F287  # Green
-ERROR_COLOR  = 0xED4245  # Red
-WARN_COLOR   = 0xFEE75C  # Yellow
+DARK_COLOR   = 0x2B2D31
+ACCENT_COLOR = 0x5865F2
+GREEN_COLOR  = 0x57F287
+ERROR_COLOR  = 0xED4245
+WARN_COLOR   = 0xFEE75C
 
-# ─────────────────────────────────────────────
-# EMOJI SHORTCUTS (Mapped to emoji_store slots 1-25)
-# ─────────────────────────────────────────────
 def E(slot: int) -> str:
-    """Get the active emoji for a slot."""
     return emoji_store.get(slot)
 
-# ─────────────────────────────────────────────
-# SAFE SENDER (Banners completely removed)
-# ─────────────────────────────────────────────
-async def safe_send(target, embed: discord.Embed, view: Optional[discord.ui.View] = None, show_banner: bool = False, **kwargs):
-    """Sends an embed safely without any banners."""
+async def safe_send(target, embed: discord.Embed, view: Optional[discord.ui.View] = None, **kwargs):
     embed.set_image(url=None)
     existing_file = kwargs.pop("file", None)
     existing_files = kwargs.pop("files", [])
@@ -101,7 +79,6 @@ async def safe_send(target, embed: discord.Embed, view: Optional[discord.ui.View
     return await target.send(embed=embed, **kwargs)
 
 async def safe_edit(msg: Optional[discord.Message], embed: discord.Embed, **kwargs):
-    """Safely edits a message with updated embed and keeps view integrity."""
     if msg is None:
         return
     try:
@@ -110,8 +87,7 @@ async def safe_edit(msg: Optional[discord.Message], embed: discord.Embed, **kwar
     except Exception as e:
         print(f"[safe_edit] Error editing message: {e}")
 
-async def safe_respond(interaction: discord.Interaction, embed: discord.Embed, view: Optional[discord.ui.View] = None, show_banner: bool = False, **kwargs):
-    """Safely responds to an interaction without banners."""
+async def safe_respond(interaction: discord.Interaction, embed: discord.Embed, view: Optional[discord.ui.View] = None, **kwargs):
     embed.set_image(url=None)
     if interaction.response.is_done():
         return await interaction.followup.send(embed=embed, view=view, **kwargs)
@@ -122,9 +98,7 @@ async def safe_respond(interaction: discord.Interaction, embed: discord.Embed, v
             await interaction.response.send_message(embed=embed, **kwargs)
         return await interaction.original_response()
 
-# ─────────────────────────────────────────────
 # STATS & REPUTATION STORE
-# ─────────────────────────────────────────────
 _STATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_stats.json")
 _user_stats: dict[str, dict] = {}
 
@@ -169,14 +143,7 @@ def bump_stat(user_id: int, **kwargs):
             s[k] = v
     _save_stats()
 
-# ─────────────────────────────────────────────
-# BACKGROUND AUTOQUEST REGISTRY
-# ─────────────────────────────────────────────
 _autoquest_tasks = {}
-
-# ─────────────────────────────────────────────
-# INSTANCE LOCK
-# ─────────────────────────────────────────────
 _instance_lock_socket = None
 
 def _acquire_instance_lock(port=37492):
@@ -191,20 +158,6 @@ def _acquire_instance_lock(port=37492):
             sys.exit(1)
         print(f"[InstanceLock] Notice: Could not bind instance lock ({e}). Continuing.", flush=True)
 
-# ─────────────────────────────────────────────
-# PERMISSIONS & ROLES
-# ─────────────────────────────────────────────
-def _has_role(member, role_id):
-    if not isinstance(member, discord.Member):
-        return False
-    return any(r.id == role_id for r in member.roles)
-
-def _is_elevated(member):
-    return _has_role(member, BOOSTER_ROLE) or _has_role(member, PREMIUM_ROLE)
-
-def _has_any_access(member):
-    return _has_role(member, FREE_ROLE_ID) or _is_elevated(member) or admin_store.is_authorized(member.id)
-
 def _is_admin(member):
     if not isinstance(member, discord.Member):
         return False
@@ -213,9 +166,7 @@ def _is_admin(member):
     return admin_store.is_owner(member.id, guild_owner_id=member.guild.owner_id if member.guild else None)
 
 def _is_bot_owner(user):
-    guild = bot.get_guild(GUILD_ID)
-    guild_owner = guild.owner_id if guild else None
-    return admin_store.is_owner(user.id, guild_owner_id=guild_owner)
+    return admin_store.is_owner(user.id)
 
 def _check_channel_allowed(ctx_or_interaction):
     ch_id = admin_store.get_quest_channel()
@@ -227,9 +178,6 @@ def _check_channel_allowed(ctx_or_interaction):
     current_ch = ctx_or_interaction.channel.id
     return current_ch == ch_id
 
-# ─────────────────────────────────────────────
-# EMBED BUILDERS
-# ─────────────────────────────────────────────
 def _embed(title: str, description: str = "", color: int = DARK_COLOR) -> discord.Embed:
     em = discord.Embed(title=title, description=description, color=color)
     em.set_footer(text=CREDITS)
@@ -275,7 +223,7 @@ def _questall_started_embed(display_name: str, queue_pos: int = 1, quest_count: 
         f"Added to queue for **{display_name}**!\n\n"
         f"{E(3)} **Queue Position:** #{queue_pos}\n"
         f"{mode_text}\n\n"
-        f"> Thanks {display_name} Using Quest Bot And Join Moonlit"
+        f"> Thanks {display_name} Using Moonlit Bot"
     )
     em.set_footer(text=CREDITS)
     em.set_image(url=None)
@@ -287,11 +235,7 @@ def _queue_status_embed(qm) -> discord.Embed:
     total_users = qm.total_users()
     total_quests = qm.total_quests_in_queue()
 
-    em = discord.Embed(
-        title=f"{E(3)} Quest Queue • Moonlit",
-        color=DARK_COLOR
-    )
-
+    em = discord.Embed(title=f"{E(3)} Quest Queue • Moonlit", color=DARK_COLOR)
     if running:
         if len(running.quests) > 1:
             active_names = ", ".join(f"`{q.name}`" for q in running.quests_remaining[:3])
@@ -499,9 +443,7 @@ def _dm_quest_done_embed(quest: QuestRecord, user_id: int) -> discord.Embed:
     em.set_footer(text=CREDITS)
     return em
 
-# ─────────────────────────────────────────────
 # VIEWS & MODALS
-# ─────────────────────────────────────────────
 class TokenModal(discord.ui.Modal, title="Link Your Discord Account"):
     token_input = discord.ui.TextInput(
         label="Discord User Token",
@@ -697,7 +639,7 @@ class HelpSelect(discord.ui.Select):
                 f"`{PREFIX}stop` — Stop current quest or leave waiting queue\n"
                 f"`{PREFIX}stats` — View your quest statistics\n"
                 f"`{PREFIX}unlink` — Unlink your account token\n"
-                f"`{PREFIX}autoquest` — Background auto-solver *(Booster / Premium)*\n\n"
+                f"`{PREFIX}autoquest` — Background auto-solver\n\n"
                 f"**Configuration Commands:**\n"
                 f"`{PREFIX}emojis` — View all 25 configurable emoji slots\n"
                 f"`{PREFIX}emojichange <slot> <emoji>` — Change emoji\n"
@@ -754,6 +696,7 @@ class HelpSelect(discord.ui.Select):
                 DARK_COLOR,
             )
 
+        em.set_image(url=None)
         try:
             await interaction.response.edit_message(embed=em, view=self.view)
         except Exception:
@@ -764,19 +707,14 @@ class HelpView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(HelpSelect())
 
-# ─────────────────────────────────────────────
 # BOT INITIALIZATION
-# ─────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix=commands.when_mentioned_or(PREFIX, "="), intents=intents, help_command=None)
 
-# ─────────────────────────────────────────────
 # PREFIX COMMANDS
-# ─────────────────────────────────────────────
-
 @bot.command(name="link", aliases=["startquest"])
 async def link_cmd(ctx: commands.Context):
     if admin_store.is_banned(ctx.author.id):
@@ -842,7 +780,7 @@ async def help_cmd(ctx: commands.Context):
         return
     await safe_send(ctx, _help_embed(ctx.author.display_name), view=HelpView())
 
-# ── EMOJI MANAGEMENT COMMANDS ────────────────
+# EMOJI MANAGEMENT
 @bot.command(name="emojis", aliases=["emojilist"])
 async def emojis_cmd(ctx: commands.Context):
     if not _is_admin(ctx.author):
@@ -864,12 +802,9 @@ async def emojis_cmd(ctx: commands.Context):
         f"**Current Emojis (Slots 1–25):**\n\n"
         f"{chunk1}\n{chunk2}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💡 **Change an Emoji:**\n"
-        f"`{PREFIX}emojichange <slot> <discord_emoji>`\n\n"
-        f"💡 **Apply Changes:**\n"
-        f"`{PREFIX}emojiapply`\n\n"
-        f"💡 **Reset:**\n"
-        f"`{PREFIX}emojireset <slot|all>`",
+        f"💡 **Change an Emoji:** `{PREFIX}emojichange <slot> <emoji>`\n"
+        f"💡 **Apply Changes:** `{PREFIX}emojiapply`\n"
+        f"💡 **Reset:** `{PREFIX}emojireset <slot|all>`",
         DARK_COLOR,
     )
     await safe_send(ctx, em)
@@ -879,76 +814,41 @@ async def emojichange_cmd(ctx: commands.Context, slot: int = None, *, new_emoji:
     if not _is_admin(ctx.author):
         await safe_send(ctx, _embed(f"{E(6)} No Permission", "Admin only command.", ERROR_COLOR))
         return
-
-    if slot is None or new_emoji is None:
-        await safe_send(ctx, _embed(
-            f"{E(7)} Usage: `{PREFIX}emojichange <slot> <discord_emoji>`",
-            f"Please specify a slot number (1–25) and the new emoji.",
-            WARN_COLOR,
-        ))
+    if slot is None or new_emoji is None or slot < 1 or slot > 25:
+        await safe_send(ctx, _embed(f"{E(7)} Usage", f"`{PREFIX}emojichange <slot 1-25> <emoji>`", WARN_COLOR))
         return
-
     new_emoji = new_emoji.strip()
-    if slot < 1 or slot > 25:
-        await safe_send(ctx, _embed(f"{E(6)} Invalid Slot", "Slot number must be between 1 and 25.", ERROR_COLOR))
-        return
-
-    old_emoji = emoji_store.get(slot)
-    lbl = emoji_store.LABELS.get(slot, "Unknown")
-    success = emoji_store.set_emoji(slot, new_emoji)
-
-    if success:
-        await safe_send(ctx, _embed(
-            f"{E(5)} Emoji Updated for Slot #{slot}",
-            f"**Slot:** #{slot} ({lbl})\n"
-            f"**Before:** {old_emoji}\n"
-            f"**After:** {new_emoji}\n\n"
-            f"👉 Run `{PREFIX}emojiapply` to finalize!",
-            GREEN_COLOR,
-        ))
-    else:
-        await safe_send(ctx, _embed(f"{E(6)} Error", "Failed to update emoji.", ERROR_COLOR))
+    emoji_store.set_emoji(slot, new_emoji)
+    await safe_send(ctx, _embed(f"{E(5)} Emoji Updated", f"Slot #{slot} updated to {new_emoji}. Run `{PREFIX}emojiapply` to apply.", GREEN_COLOR))
 
 @bot.command(name="emojiapply")
 async def emojiapply_cmd(ctx: commands.Context):
     if not _is_admin(ctx.author):
         await safe_send(ctx, _embed(f"{E(6)} No Permission", "Admin only command.", ERROR_COLOR))
         return
-
-    success = emoji_store.apply_to_code()
-    await safe_send(ctx, _embed(
-        f"{E(5)} Emojis Applied Successfully!",
-        "All emoji changes have been saved and applied!",
-        GREEN_COLOR,
-    ))
+    emoji_store.apply_to_code()
+    await safe_send(ctx, _embed(f"{E(5)} Emojis Applied", "All emoji configurations saved successfully!", GREEN_COLOR))
 
 @bot.command(name="emojireset")
 async def emojireset_cmd(ctx: commands.Context, target: str = None):
     if not _is_admin(ctx.author):
         await safe_send(ctx, _embed(f"{E(6)} No Permission", "Admin only command.", ERROR_COLOR))
         return
-
     if not target:
         await safe_send(ctx, _embed(f"{E(7)} Usage", f"`{PREFIX}emojireset <slot|all>`", WARN_COLOR))
         return
-
     if target.lower() == "all":
         emoji_store.reset_all()
-        await safe_send(ctx, _embed(f"{E(5)} All Emojis Reset", "All 25 slots have been reset.", GREEN_COLOR))
+        await safe_send(ctx, _embed(f"{E(5)} Reset", "All emojis reset to default.", GREEN_COLOR))
         return
-
     try:
         slot = int(target)
-    except ValueError:
-        await safe_send(ctx, _embed(f"{E(6)} Invalid Target", "Specify a slot number (1–25) or `all`.", ERROR_COLOR))
-        return
+        emoji_store.reset_emoji(slot)
+        await safe_send(ctx, _embed(f"{E(5)} Reset", f"Slot #{slot} reset.", GREEN_COLOR))
+    except Exception:
+        await safe_send(ctx, _embed(f"{E(6)} Error", "Invalid slot number.", ERROR_COLOR))
 
-    emoji_store.reset_emoji(slot)
-    await safe_send(ctx, _embed(f"{E(5)} Slot #{slot} Reset", f"Slot #{slot} reset to default.", GREEN_COLOR))
-
-# ─────────────────────────────────────────────
 # REAL QUEST QUEUE MANAGER
-# ─────────────────────────────────────────────
 @dataclass
 class QuestJob:
     user_id: int
@@ -1128,7 +1028,6 @@ class QuestQueueManager:
                     except Exception:
                         pass
                     return True, pos
-
         return False, None
 
     async def clear_waiting(self) -> int:
@@ -1161,7 +1060,6 @@ class QuestQueueManager:
         updater: Optional[ConcurrentProgressUpdater] = None
         try:
             bump_stat(job.user_id, total_sessions=1, last_session=datetime.datetime.now().timestamp())
-            
             await asyncio.sleep(1.5)
             if job.cancelled:
                 return
@@ -1203,7 +1101,6 @@ class QuestQueueManager:
                 async def _solve_single(idx: int, q: QuestRecord):
                     if idx > 0:
                         await asyncio.sleep(idx * 1.5)
-
                     if job.cancelled:
                         return {"status": "stopped", "quest": q}
 
@@ -1249,12 +1146,10 @@ class QuestQueueManager:
                             await updater.update_quest(final_q, final_q.progress_percent(), status="failed", message="Failed")
                             job.quests_remaining = [rem for rem in job.quests_remaining if rem.id != q.id]
                             return result
-
                     except asyncio.CancelledError:
                         await updater.update_quest(q, q.progress_percent(), status="stopped", message="Stopped")
                         raise
                     except Exception as ex:
-                        print(f"[_job_worker:{job.user_id}:{q.name}] {ex}")
                         bump_stat(job.user_id, total_errors=1)
                         await updater.update_quest(q, q.progress_percent(), status="failed", message=str(ex))
                         job.quests_remaining = [rem for rem in job.quests_remaining if rem.id != q.id]
@@ -1271,9 +1166,7 @@ class QuestQueueManager:
                 comp = len([q for q in already_done if q.is_completed() or q.is_claimed()]) + sum(
                     1 for r in results if isinstance(r, dict) and r.get("status") == "completed"
                 )
-                needs_pc = sum(
-                    1 for r in results if isinstance(r, dict) and r.get("status") == "needs_desktop"
-                )
+                needs_pc = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "needs_desktop")
                 errs = sum(
                     1 for r in results
                     if (isinstance(r, dict) and r.get("status") not in ("completed", "needs_desktop"))
@@ -1288,58 +1181,28 @@ class QuestQueueManager:
                     if comp > 0:
                         await safe_edit(job.msg, _embed(
                             f"{E(5)} Quest Completed!",
-                            f"**{job.quests[0].name}** was completed successfully! 🎉",
+                            f"**{job.quests[0].name}** completed successfully! 🎉",
                             GREEN_COLOR
                         ), view=done_view)
                     elif needs_pc > 0:
                         await safe_edit(job.msg, _embed(
                             f"🎮 Desktop App Required",
-                            f"**{job.quests[0].name}** is a Game Quest (`PLAY_ON_DESKTOP`).\nUse `{PREFIX}gamehelper` for solutions!",
+                            f"**{job.quests[0].name}** needs PC. Use `{PREFIX}gamehelper` for instructions.",
                             WARN_COLOR
                         ), view=done_view)
                     else:
-                        await safe_edit(job.msg, _embed(
-                            f"{E(6)} Quest Failed",
-                            f"Could not complete **{job.quests[0].name}**.",
-                            ERROR_COLOR
-                        ), view=done_view)
+                        await safe_edit(job.msg, _embed(f"{E(6)} Quest Failed", "Could not complete quest.", ERROR_COLOR), view=done_view)
                 else:
-                    desktop_note = f"\n🎮 **Desktop Required:** {needs_pc} game quest(s) need PC ({PREFIX}gamehelper)" if needs_pc > 0 else ""
                     summary = _embed(
                         f"{E(1)} Quest All — Finished!",
                         f"{E(5)} **Completed:** {comp}/{total}\n"
-                        f"{E(6)} **Failed/Errors:** {errs}{desktop_note}\n"
-                        f"{E(8)} **Total Quests Done (All-Time):** {s.get('total_completed', 0)}\n\n"
-                        f"{E(14)} *Claim buttons have been sent to your DMs!*",
-                        GREEN_COLOR if (errs == 0 and needs_pc == 0) else (WARN_COLOR if comp > 0 else ERROR_COLOR),
+                        f"{E(6)} **Failed/Errors:** {errs}\n"
+                        f"{E(8)} **Total Quests Done (All-Time):** {s.get('total_completed', 0)}",
+                        GREEN_COLOR if errs == 0 else WARN_COLOR,
                     )
                     await safe_edit(job.msg, summary, view=done_view)
-
-        except asyncio.CancelledError:
-            if updater:
-                try:
-                    await updater.stop()
-                except Exception:
-                    pass
-            if job.msg:
-                await safe_edit(job.msg, _embed(
-                    f"{E(17)} Quest Stopped",
-                    "Your quest process was cancelled.",
-                    WARN_COLOR
-                ), view=None)
         except Exception as e:
             print(f"[_job_worker fatal:{job.user_id}] {e}")
-            if updater:
-                try:
-                    await updater.stop()
-                except Exception:
-                    pass
-            if job.msg:
-                await safe_edit(job.msg, _embed(
-                    f"{E(6)} Queue Worker Error",
-                    f"Encountered an error: `{e}`",
-                    ERROR_COLOR
-                ))
         finally:
             job.quests_remaining = []
             job.child_tasks = []
@@ -1347,17 +1210,14 @@ class QuestQueueManager:
 
 quest_queue = QuestQueueManager()
 
-# ── COMMANDS ────────────────────────────────
-@bot.command(name="quest", aliases=["startq"])
+# QUEST COMMANDS
+@bot.command(name="quest")
 async def quest_cmd(ctx: commands.Context, target: str = "all"):
     if admin_store.is_banned(ctx.author.id):
         return
     if not _check_channel_allowed(ctx):
         ch_id = admin_store.get_quest_channel()
         await ctx.send(f"⚠️ Quest commands can only be used in <#{ch_id}>.", delete_after=8)
-        return
-    if not _has_any_access(ctx.author):
-        await safe_send(ctx, _embed(f"{E(6)} No Access", "You need appropriate role access.", ERROR_COLOR))
         return
     token = token_store.get_token(ctx.author.id)
     if not token:
@@ -1369,7 +1229,7 @@ async def quest_cmd(ctx: commands.Context, target: str = "all"):
         await safe_send(ctx, _embed(f"{E(7)} Already Active/Queued", f"Position #{pos} in queue.", WARN_COLOR))
         return
 
-    msg = await safe_send(ctx, _embed(f"{E(1)} Fetching Quests...", "Loading your available Discord quests...", ACCENT_COLOR))
+    msg = await safe_send(ctx, _embed(f"{E(1)} Fetching Quests...", "Loading quests...", ACCENT_COLOR))
     try:
         async with aiohttp.ClientSession() as session:
             svc = QuestService(token, speed_mode="fast")
@@ -1417,9 +1277,6 @@ async def questall_cmd(ctx: commands.Context):
         ch_id = admin_store.get_quest_channel()
         await ctx.send(f"⚠️ Quest commands can only be used in <#{ch_id}>.", delete_after=8)
         return
-    if not _has_any_access(ctx.author):
-        await safe_send(ctx, _embed(f"{E(6)} No Access", "You need appropriate role access.", ERROR_COLOR))
-        return
     token = token_store.get_token(ctx.author.id)
     if not token:
         await safe_send(ctx, _embed(f"{E(6)} Not Linked", f"Please link your account first using `{PREFIX}link`.", ERROR_COLOR))
@@ -1430,7 +1287,7 @@ async def questall_cmd(ctx: commands.Context):
         await safe_send(ctx, _embed(f"{E(7)} Already Active/Queued", f"Position #{pos} in queue.", WARN_COLOR))
         return
 
-    msg = await safe_send(ctx, _embed(f"{E(1)} Fetching Quests...", "Loading all available quests...", ACCENT_COLOR))
+    msg = await safe_send(ctx, _embed(f"{E(1)} Fetching Quests...", "Loading quests...", ACCENT_COLOR))
     try:
         async with aiohttp.ClientSession() as session:
             svc = QuestService(token, speed_mode="fast")
@@ -1488,29 +1345,30 @@ async def gamehelper_cmd(ctx: commands.Context):
     em = discord.Embed(
         title="🎮 How to Complete Discord Game Quests",
         description=(
-            "Discord has enforced strict server-side **executable verification** for game quests.\n\n"
-            "### ⚡ Method 1: Discord Desktop Console Script (Fastest)\n"
-            "1. Open **Discord Desktop App** on PC\n"
-            "2. Press `Ctrl + Shift + I` ➔ **Console** tab\n"
-            "3. Type `allow pasting` and press Enter\n"
-            "4. Visit https://discord.com/quest-home and use the quest script.\n\n"
+            "Discord requires local game detection for `PLAY_ON_DESKTOP` quests.\n\n"
+            "### ⚡ Method 1: Discord Desktop Console Script\n"
+            "1. Open Discord Desktop App ➔ `Ctrl + Shift + I` ➔ **Console**\n"
+            "2. Type `allow pasting` and press Enter\n"
+            "3. Visit https://discord.com/quest-home and use the script.\n\n"
             "### 🖥️ Method 2: Dummy Executable\n"
-            "1. Copy `notepad.exe` and rename it to the game executable name.\n"
-            "2. Add it to Discord Settings ➔ **Registered Games**."
+            "Copy `notepad.exe` and rename it to the game executable name, then add it to Discord Settings ➔ **Registered Games**."
         ),
         color=ACCENT_COLOR,
     )
     em.set_footer(text=CREDITS)
     await safe_send(ctx, em)
 
+@bot.command(name="clearqueue", aliases=["qclear"])
+async def clear_queue_cmd(ctx: commands.Context):
+    if not _is_admin(ctx.author):
+        return
+    cleared = await quest_queue.clear_waiting()
+    await safe_send(ctx, _embed(f"{E(5)} Queue Cleared", f"Cleared **{cleared}** waiting user(s).", GREEN_COLOR))
+
 @bot.command(name="autoquest")
 async def autoquest_cmd(ctx: commands.Context, option: str = None):
     if admin_store.is_banned(ctx.author.id):
         return
-    if not _is_elevated(ctx.author):
-        await safe_send(ctx, _embed(f"{E(6)} Booster/Premium Only", "Autoquest is exclusive to Booster and Premium members.", ERROR_COLOR))
-        return
-
     token = token_store.get_token(ctx.author.id)
     if not token:
         await safe_send(ctx, _embed(f"{E(6)} Not Linked", f"Please link your account first using `{PREFIX}link`.", ERROR_COLOR))
@@ -1524,7 +1382,7 @@ async def autoquest_cmd(ctx: commands.Context, option: str = None):
         if is_running:
             _autoquest_tasks[uid].cancel()
             _autoquest_tasks.pop(uid, None)
-            await safe_send(ctx, _embed(f"{E(17)} Autoquest Stopped", "Background autoquest solver disabled.", WARN_COLOR))
+            await safe_send(ctx, _embed(f"{E(17)} Autoquest Stopped", "Background autoquest disabled.", WARN_COLOR))
         else:
             await safe_send(ctx, _embed(f"{E(7)} Not Active", "Autoquest is not running.", WARN_COLOR))
         return
@@ -1562,35 +1420,49 @@ async def autoquest_cmd(ctx: commands.Context, option: str = None):
     _autoquest_tasks[uid] = asyncio.create_task(_loop())
     await safe_send(ctx, _embed(f"{E(20)} Autoquest Activated", "Background autoquest service is now active!", GREEN_COLOR))
 
-# ── SLASH COMMANDS ───────────────────────────
+# OWNER & ADMIN COMMANDS
+@bot.command(name="auth")
+async def auth_prefix_cmd(ctx: commands.Context, member: discord.Member = None):
+    if not _is_bot_owner(ctx.author):
+        return
+    if member:
+        admin_store.authorize_user(member.id)
+        await safe_send(ctx, _embed(f"{E(5)} Authorized", f"<@{member.id}> authorized.", GREEN_COLOR))
+
+@bot.command(name="quest-ban")
+async def quest_ban_prefix_cmd(ctx: commands.Context, member: discord.Member = None):
+    if not _is_bot_owner(ctx.author):
+        return
+    if member:
+        admin_store.ban_user(member.id)
+        await quest_queue.cancel_user(member.id)
+        await safe_send(ctx, _embed(f"{E(6)} Banned", f"<@{member.id}> banned.", ERROR_COLOR))
+
+@bot.command(name="set-quest-channel")
+async def set_quest_channel_prefix_cmd(ctx: commands.Context, channel: discord.TextChannel = None):
+    if not _is_bot_owner(ctx.author):
+        return
+    target_ch = channel or ctx.channel
+    admin_store.set_quest_channel(target_ch.id)
+    await safe_send(ctx, _embed(f"{E(5)} Channel Set", f"Restricted to <#{target_ch.id}>.", GREEN_COLOR))
+
+# SLASH COMMANDS
 @bot.tree.command(name="help", description="View the interactive Quest Center")
 async def slash_help(interaction: discord.Interaction):
-    if admin_store.is_banned(interaction.user.id):
-        await interaction.response.send_message("You are banned.", ephemeral=True)
-        return
     await safe_respond(interaction, _help_embed(interaction.user.display_name), view=HelpView())
 
 @bot.tree.command(name="link", description="Link your Discord account token")
 async def slash_link(interaction: discord.Interaction):
-    if admin_store.is_banned(interaction.user.id):
-        await interaction.response.send_message("You are banned.", ephemeral=True)
-        return
     await safe_respond(interaction, _link_embed(interaction.user.id), view=LinkView())
 
 @bot.tree.command(name="unlink", description="Unlink your Discord account")
 async def slash_unlink(interaction: discord.Interaction):
-    if admin_store.is_banned(interaction.user.id):
-        await interaction.response.send_message("You are banned.", ephemeral=True)
-        return
     token_store.delete_token(interaction.user.id)
-    await safe_respond(interaction, _embed(f"{E(5)} Account Unlinked", "Your token has been removed.", GREEN_COLOR), ephemeral=True)
+    await safe_respond(interaction, _embed(f"{E(5)} Unlinked", "Token removed.", GREEN_COLOR), ephemeral=True)
 
 @bot.tree.command(name="quest", description="Complete Discord quests")
 @app_commands.describe(target="Type 'all' or quest number")
 async def slash_quest(interaction: discord.Interaction, target: Optional[str] = "all"):
-    if admin_store.is_banned(interaction.user.id):
-        await interaction.response.send_message("You are banned.", ephemeral=True)
-        return
     token = token_store.get_token(interaction.user.id)
     if not token:
         await safe_respond(interaction, _embed(f"{E(6)} Not Linked", "Run `/link` first.", ERROR_COLOR), ephemeral=True)
@@ -1634,7 +1506,7 @@ async def slash_questall(interaction: discord.Interaction):
 async def slash_stop(interaction: discord.Interaction):
     cancelled, pos = await quest_queue.cancel_user(interaction.user.id)
     if cancelled:
-        await safe_respond(interaction, _embed(f"{E(17)} Quest Stopped", "Your process has been stopped.", WARN_COLOR))
+        await safe_respond(interaction, _embed(f"{E(17)} Quest Stopped", "Process stopped.", WARN_COLOR))
     else:
         await safe_respond(interaction, _embed(f"{E(7)} Nothing Running", "No active quests found.", WARN_COLOR), ephemeral=True)
 
@@ -1656,24 +1528,16 @@ async def slash_stats(interaction: discord.Interaction):
     )
     await safe_respond(interaction, em)
 
-# ─────────────────────────────────────────────
 # EVENTS
-# ─────────────────────────────────────────────
 @bot.event
 async def on_ready():
-    guild = bot.get_guild(GUILD_ID)
-    print(f"[{BOT_NAME}] Online | User: {bot.user} | Guild: {guild}", flush=True)
-
+    print(f"[{BOT_NAME}] Online | User: {bot.user}", flush=True)
     bot.add_view(LinkView())
     bot.add_view(HelpView())
     bot.add_view(QuestProgressView(0))
-
     try:
-        if guild:
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-        else:
-            await bot.tree.sync()
+        synced = await bot.tree.sync()
+        print(f"[{BOT_NAME}] Synced {len(synced)} global slash commands", flush=True)
     except Exception as e:
         print(f"Sync error: {e}", flush=True)
 
@@ -1683,9 +1547,6 @@ async def on_command_error(ctx: commands.Context, error):
         return
     print(f"[Command Error] {ctx.command}: {error}")
 
-# ─────────────────────────────────────────────
-# RUN
-# ─────────────────────────────────────────────
 if __name__ == "__main__":
     _acquire_instance_lock()
     if not BOT_TOKEN:
