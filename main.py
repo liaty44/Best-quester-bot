@@ -2,7 +2,7 @@
 main.py
 -------
 Universal entry point for bot-hosting platforms (Render, Pterodactyl, Railway, etc.)
-Launches Moonlit Quest Bot v2 with an integrated Render health-check server.
+Launches Moonlit Quest Bot v2 with an integrated Render health-check server and error logging.
 """
 import os
 import sys
@@ -12,9 +12,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # Ensure current directory is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import bot
-
-# Render ke liye lightweight health-check server (Port bind karne ke liye)
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -29,14 +26,22 @@ def run_server():
     httpd.serve_forever()
 
 if __name__ == "__main__":
-    bot._acquire_instance_lock()
-    if not bot.BOT_TOKEN:
-        print("ERROR: BOT_TOKEN is not set in .env! Please set BOT_TOKEN in your environment or .env file.", flush=True)
-        sys.exit(1)
-    else:
-        # Background thread mein HTTP server start karein taaki Render port detect kar sake
+    try:
+        import bot
+        bot._acquire_instance_lock()
+        
+        if not bot.BOT_TOKEN:
+            print("ERROR: BOT_TOKEN is not set in environment variables!", flush=True)
+            sys.exit(1)
+        
+        # Background health-check server start karein
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
 
         print(f"Starting {bot.BOT_NAME} on Render...", flush=True)
         bot.bot.run(bot.BOT_TOKEN)
+    except Exception as e:
+        print(f"[CRITICAL STARTUP ERROR] {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
